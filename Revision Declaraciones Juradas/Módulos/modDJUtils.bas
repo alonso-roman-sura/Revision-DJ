@@ -1,400 +1,369 @@
 Option Explicit
 
-Public Function LoadColaboradoresTable() As ListObject
-    Dim filePath As String
-    Dim srcWb As Workbook
-    Dim srcWs As Worksheet
-    Dim hdrRow As Long
-    Dim hdrMap As Object
-    Dim arrOut As Variant
-    Dim lo As ListObject
-    Dim score As Long
+Public Function PickSourceFile(ByVal dialogTitle As String) As String
+    Dim v As Variant
     
-    filePath = PickSourceFile("Seleccionar base de datos de colaboradores")
-    If Len(filePath) = 0 Then Exit Function
+    v = Application.GetOpenFilename( _
+        "Archivos Excel y HTML (*.xlsx;*.xls;*.xlsm;*.htm;*.html),*.xlsx;*.xls;*.xlsm;*.htm;*.html", _
+        , dialogTitle)
     
-    Set srcWb = Workbooks.Open(Filename:=filePath, ReadOnly:=True, Local:=True)
-    
-    On Error GoTo CleanFail
-    
-    Set srcWs = GetBestSourceSheet(srcWb, "ACTIVOS", ColabOutputHeaders())
-    If srcWs Is Nothing Then
-        Err.Raise vbObjectError + 1000, , "No se encontró una hoja válida para colaboradores."
+    If VarType(v) = vbBoolean Then
+        PickSourceFile = vbNullString
+    Else
+        PickSourceFile = CStr(v)
     End If
-    
-    hdrRow = DetectHeaderRow(srcWs, ColabOutputHeaders())
-    If hdrRow = 0 Then
-        Err.Raise vbObjectError + 1001, , "No se pudo detectar la fila de encabezados en la base de colaboradores."
-    End If
-    
-    Set hdrMap = HeaderMap(srcWs, hdrRow)
-    
-    If HeaderExists(hdrMap, "Fecha de salida") Then
-        Err.Raise vbObjectError + 1002, , "El archivo no corresponde a la base requerida. Contiene la columna 'Fecha de salida'."
-    End If
-    
-    score = HeaderScoreMap(hdrMap, ColabOutputHeaders())
-    If score < MIN_COLAB_HEADER_MATCHES Then
-        Err.Raise vbObjectError + 1003, , "La estructura del archivo de colaboradores no cumple la validación mínima."
-    End If
-    
-    If Not HasEssentialHeaders(hdrMap, ColabEssentialHeaders()) Then
-        Err.Raise vbObjectError + 1004, , "Faltan columnas esenciales en la base de colaboradores."
-    End If
-    
-    arrOut = BuildOutputArray(srcWs, hdrRow, ColabOutputHeaders(), True, ColabTextHeaders())
-    
-    Set lo = WriteArrayToNewTable(arrOut, SHEET_COLAB, TABLE_COLAB, TableStyleColaboradores())
-    
-    ForceTableColumnsAsText lo, ColabTextHeaders()
-    CoerceTableDateColumns lo, ColabDateHeaders()
-    CoerceTableNumericColumns lo, ColabNumericHeaders()
-    
-    lo.Parent.Cells.EntireColumn.AutoFit
-    
-    Set LoadColaboradoresTable = lo
-    
-CleanExit:
-    On Error Resume Next
-    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
-    Exit Function
-    
-CleanFail:
-    On Error Resume Next
-    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
-    Err.Raise Err.Number, , Err.Description
 End Function
 
-Public Function LoadReporteDJTable() As ListObject
-    Dim filePath As String
-    Dim srcWb As Workbook
-    Dim srcWs As Worksheet
-    Dim hdrRow As Long
-    Dim hdrMap As Object
-    Dim arrOut As Variant
-    Dim lo As ListObject
-    Dim score As Long
-    
-    filePath = PickSourceFile("Seleccionar reporte de declaraciones juradas")
-    If Len(filePath) = 0 Then Exit Function
-    
-    Set srcWb = Workbooks.Open(Filename:=filePath, ReadOnly:=True, Local:=True)
-    
-    On Error GoTo CleanFail
-    
-    Set srcWs = GetBestSourceSheet(srcWb, vbNullString, ReporteOutputHeaders())
-    If srcWs Is Nothing Then
-        Err.Raise vbObjectError + 1100, , "No se encontró una hoja válida para el reporte DJ."
-    End If
-    
-    hdrRow = DetectHeaderRow(srcWs, ReporteOutputHeaders())
-    If hdrRow = 0 Then
-        Err.Raise vbObjectError + 1101, , "No se pudo detectar la fila de encabezados en el reporte DJ."
-    End If
-    
-    Set hdrMap = HeaderMap(srcWs, hdrRow)
-    
-    score = HeaderScoreMap(hdrMap, ReporteOutputHeaders())
-    If score < MIN_REPORTE_HEADER_MATCHES Then
-        Err.Raise vbObjectError + 1102, , "La estructura del archivo del reporte DJ no cumple la validación mínima."
-    End If
-    
-    If Not HasEssentialHeaders(hdrMap, ReporteEssentialHeaders()) Then
-        Err.Raise vbObjectError + 1103, , "Faltan columnas esenciales en el reporte DJ."
-    End If
-    
-    arrOut = BuildOutputArray(srcWs, hdrRow, ReporteOutputHeaders(), False, ReporteTextHeaders())
-    
-    Set lo = WriteArrayToNewTable(arrOut, SHEET_REPORTE, TABLE_REPORTE, TableStyleReporteDJ())
-    
-    ForceTableColumnsAsText lo, ReporteTextHeaders()
-    CoerceTableDateColumns lo, ReporteDateHeaders()
-    
-    lo.Parent.Cells.EntireColumn.AutoFit
-    
-    Set LoadReporteDJTable = lo
-    
-CleanExit:
-    On Error Resume Next
-    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
-    Exit Function
-    
-CleanFail:
-    On Error Resume Next
-    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
-    Err.Raise Err.Number, , Err.Description
-End Function
-
-Private Function GetBestSourceSheet(ByVal wb As Workbook, ByVal preferredName As String, ByVal expectedHeaders As Variant) As Worksheet
+Public Function GetRequiredTable(ByVal tableName As String) As ListObject
     Dim ws As Worksheet
-    Dim bestWs As Worksheet
-    Dim score As Long
-    Dim bestScore As Long
+    Dim lo As ListObject
     
-    On Error Resume Next
-    If Len(preferredName) > 0 Then
-        Set ws = wb.Worksheets(preferredName)
-        If Not ws Is Nothing Then
-            If BestHeaderScoreOnSheet(ws, expectedHeaders) > 0 Then
-                Set GetBestSourceSheet = ws
+    For Each ws In ThisWorkbook.Worksheets
+        For Each lo In ws.ListObjects
+            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
+                Set GetRequiredTable = lo
                 Exit Function
             End If
-        End If
-    End If
-    On Error GoTo 0
-    
-    For Each ws In wb.Worksheets
-        score = BestHeaderScoreOnSheet(ws, expectedHeaders)
-        If score > bestScore Then
-            bestScore = score
-            Set bestWs = ws
-        End If
+        Next lo
     Next ws
     
-    Set GetBestSourceSheet = bestWs
+    Err.Raise vbObjectError + 1600, , "No se encontró la tabla '" & tableName & "'."
 End Function
 
-Private Function BestHeaderScoreOnSheet(ByVal ws As Worksheet, ByVal expectedHeaders As Variant) As Long
-    Dim r As Long
-    Dim maxRow As Long
-    Dim score As Long
-    Dim bestScore As Long
+Public Function GetListColumn(ByVal lo As ListObject, ByVal headerName As String) As ListColumn
+    Dim lc As ListColumn
     
-    maxRow = Application.Min(HEADER_SCAN_ROWS, LastUsedRow(ws))
-    
-    For r = 1 To maxRow
-        score = CountHeaderMatchesInRow(ws, r, expectedHeaders)
-        If score > bestScore Then bestScore = score
-    Next r
-    
-    BestHeaderScoreOnSheet = bestScore
-End Function
-
-Private Function DetectHeaderRow(ByVal ws As Worksheet, ByVal expectedHeaders As Variant) As Long
-    Dim r As Long
-    Dim maxRow As Long
-    Dim score As Long
-    Dim bestScore As Long
-    Dim bestRow As Long
-    
-    maxRow = Application.Min(HEADER_SCAN_ROWS, LastUsedRow(ws))
-    
-    For r = 1 To maxRow
-        score = CountHeaderMatchesInRow(ws, r, expectedHeaders)
-        If score > bestScore Then
-            bestScore = score
-            bestRow = r
-        End If
-    Next r
-    
-    DetectHeaderRow = bestRow
-End Function
-
-Private Function CountHeaderMatchesInRow(ByVal ws As Worksheet, ByVal hdrRow As Long, ByVal expectedHeaders As Variant) As Long
-    Dim map As Object
-    Set map = HeaderMap(ws, hdrRow)
-    CountHeaderMatchesInRow = HeaderScoreMap(map, expectedHeaders)
-End Function
-
-Private Function HeaderMap(ByVal ws As Worksheet, ByVal hdrRow As Long) As Object
-    Dim d As Object
-    Dim lastCol As Long
-    Dim c As Long
-    Dim rawHeader As String
-    Dim key As String
-    
-    Set d = CreateObject("Scripting.Dictionary")
-    d.CompareMode = vbTextCompare
-    
-    lastCol = LastUsedCol(ws)
-    
-    For c = 1 To lastCol
-        rawHeader = Trim$(CStr(ws.Cells(hdrRow, c).Value))
-        If Len(rawHeader) > 0 Then
-            key = CanonicalHeader(rawHeader)
-            If Len(key) > 0 Then
-                If Not d.Exists(key) Then d.Add key, c
-            End If
-        End If
-    Next c
-    
-    Set HeaderMap = d
-End Function
-
-Private Function HeaderScoreMap(ByVal hdrMap As Object, ByVal expectedHeaders As Variant) As Long
-    Dim i As Long
-    Dim score As Long
-    
-    For i = LBound(expectedHeaders) To UBound(expectedHeaders)
-        If ResolveHeaderIndex(hdrMap, CStr(expectedHeaders(i))) > 0 Then
-            score = score + 1
-        End If
-    Next i
-    
-    HeaderScoreMap = score
-End Function
-
-Private Function HasEssentialHeaders(ByVal hdrMap As Object, ByVal essentialHeaders As Variant) As Boolean
-    Dim i As Long
-    
-    For i = LBound(essentialHeaders) To UBound(essentialHeaders)
-        If ResolveHeaderIndex(hdrMap, CStr(essentialHeaders(i))) = 0 Then
-            HasEssentialHeaders = False
+    For Each lc In lo.ListColumns
+        If CanonicalHeader(lc.Name) = CanonicalHeader(headerName) Then
+            Set GetListColumn = lc
             Exit Function
         End If
-    Next i
+    Next lc
+End Function
+
+Public Sub RemoveTableColumnIfExists(ByVal lo As ListObject, ByVal headerName As String)
+    Dim lc As ListColumn
     
-    HasEssentialHeaders = True
-End Function
+    Set lc = GetListColumn(lo, headerName)
+    If Not lc Is Nothing Then lc.Delete
+End Sub
 
-Private Function HeaderExists(ByVal hdrMap As Object, ByVal headerName As String) As Boolean
-    HeaderExists = (ResolveHeaderIndex(hdrMap, headerName) > 0)
-End Function
-
-Private Function ResolveHeaderIndex(ByVal hdrMap As Object, ByVal targetHeader As String) As Long
-    Dim aliases As Variant
+Public Sub RemoveColumnsByPrefix(ByVal lo As ListObject, ByVal prefixText As String)
     Dim i As Long
-    Dim aliasKey As String
+    Dim prefixKey As String
+    Dim currentKey As String
     
-    aliases = GetHeaderAliases(targetHeader)
+    prefixKey = CanonicalHeader(prefixText)
     
-    For i = LBound(aliases) To UBound(aliases)
-        aliasKey = CStr(aliases(i))
-        If hdrMap.Exists(aliasKey) Then
-            ResolveHeaderIndex = CLng(hdrMap(aliasKey))
-            Exit Function
+    For i = lo.ListColumns.Count To 1 Step -1
+        currentKey = CanonicalHeader(lo.ListColumns(i).Name)
+        If Left$(currentKey, Len(prefixKey)) = prefixKey Then
+            lo.ListColumns(i).Delete
         End If
     Next i
-End Function
+End Sub
 
-Private Function BuildOutputArray(ByVal ws As Worksheet, ByVal hdrRow As Long, ByVal outHeaders As Variant, ByVal filterCountry As Boolean, ByVal textHeaders As Variant) As Variant
-    Dim hdrMap As Object
-    Dim lastRow As Long
-    Dim lastCol As Long
-    Dim data As Variant
-    Dim outArr() As Variant
-    Dim finalArr As Variant
-    Dim r As Long
-    Dim c As Long
-    Dim outRow As Long
-    Dim colCount As Long
-    Dim srcCol As Long
-    Dim countryCol As Long
-    Dim keepRow As Boolean
-    Dim headerName As String
-    Dim cellValue As Variant
+Public Sub DeleteSheetIfExists(ByVal sheetName As String)
+    Dim ws As Worksheet
     
-    Set hdrMap = HeaderMap(ws, hdrRow)
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
     
-    lastRow = LastUsedRow(ws)
-    lastCol = LastUsedCol(ws)
-    
-    If lastRow <= hdrRow Then
-        Err.Raise vbObjectError + 1500, , "No se encontraron filas de datos debajo del encabezado."
+    If Not ws Is Nothing Then
+        ws.Delete
     End If
-    
-    data = ws.Range(ws.Cells(hdrRow + 1, 1), ws.Cells(lastRow, lastCol)).Value2
-    colCount = UBound(outHeaders) - LBound(outHeaders) + 1
-    
-    ReDim outArr(1 To UBound(data, 1) + 1, 1 To colCount)
-    
-    For c = LBound(outHeaders) To UBound(outHeaders)
-        outArr(1, c - LBound(outHeaders) + 1) = CStr(outHeaders(c))
-    Next c
-    
-    If filterCountry Then
-        countryCol = ResolveHeaderIndex(hdrMap, "País")
-        If countryCol = 0 Then
-            Err.Raise vbObjectError + 1501, , "No se encontró la columna 'País' para filtrar Perú."
-        End If
-    End If
-    
-    outRow = 1
-    
-    For r = 1 To UBound(data, 1)
-        If Not RowIsBlank(data, r) Then
-            keepRow = True
-            
-            If filterCountry Then
-                keepRow = (NormalizeText(CStr(ws.Cells(hdrRow + r, countryCol).Text), True) = "PERU")
-            End If
-            
-            If keepRow Then
-                outRow = outRow + 1
-                
-                For c = LBound(outHeaders) To UBound(outHeaders)
-                    headerName = CStr(outHeaders(c))
-                    srcCol = ResolveHeaderIndex(hdrMap, headerName)
-                    
-                    If srcCol > 0 Then
-                        If IsHeaderInList(headerName, textHeaders) Then
-                            cellValue = CStr(ws.Cells(hdrRow + r, srcCol).Text)
-                        Else
-                            cellValue = ws.Cells(hdrRow + r, srcCol).Value2
-                        End If
-                        
-                        outArr(outRow, c - LBound(outHeaders) + 1) = cellValue
-                    Else
-                        outArr(outRow, c - LBound(outHeaders) + 1) = vbNullString
-                    End If
-                Next c
-            End If
-        End If
-    Next r
-    
-    If outRow = 1 Then
-        Err.Raise vbObjectError + 1502, , "No quedaron registros luego del filtrado aplicado."
-    End If
-    
-    finalArr = Trim2DArrayRows(outArr, outRow, colCount)
-    BuildOutputArray = finalArr
-End Function
+End Sub
 
-Private Function IsHeaderInList(ByVal headerName As String, ByVal headerList As Variant) As Boolean
+Public Sub ForceTableColumnsAsText(ByVal lo As ListObject, ByVal headerList As Variant)
     Dim i As Long
     
     For i = LBound(headerList) To UBound(headerList)
-        If CanonicalHeader(headerName) = CanonicalHeader(CStr(headerList(i))) Then
-            IsHeaderInList = True
+        ForceTableColumnAsText lo, CStr(headerList(i))
+    Next i
+End Sub
+
+Public Sub ForceTableColumnAsText(ByVal lo As ListObject, ByVal headerName As String)
+    Dim lc As ListColumn
+    Dim c As Range
+    Dim v As Variant
+    
+    Set lc = GetListColumn(lo, headerName)
+    If lc Is Nothing Then Exit Sub
+    If lc.DataBodyRange Is Nothing Then Exit Sub
+    
+    lc.DataBodyRange.NumberFormat = "@"
+    
+    For Each c In lc.DataBodyRange.Cells
+        v = c.Value2
+        If Len(Trim$(CStr(v))) > 0 Then
+            c.Value = CStr(v)
+        Else
+            c.Value = vbNullString
+        End If
+    Next c
+End Sub
+
+Public Sub CoerceTableDateColumns(ByVal lo As ListObject, ByVal headerList As Variant)
+    Dim i As Long
+    
+    For i = LBound(headerList) To UBound(headerList)
+        CoerceTableDateColumn lo, CStr(headerList(i))
+    Next i
+End Sub
+
+Public Sub CoerceTableDateColumn(ByVal lo As ListObject, ByVal headerName As String)
+    Dim lc As ListColumn
+    Dim c As Range
+    Dim dt As Date
+    
+    Set lc = GetListColumn(lo, headerName)
+    If lc Is Nothing Then Exit Sub
+    If lc.DataBodyRange Is Nothing Then Exit Sub
+    
+    For Each c In lc.DataBodyRange.Cells
+        If Len(Trim$(CStr(c.Value))) > 0 Then
+            If TryParseDateValue(c.Value, dt) Then
+                c.Value = dt
+            End If
+        End If
+    Next c
+    
+    lc.DataBodyRange.NumberFormat = "dd/mm/yyyy"
+End Sub
+
+Public Sub CoerceTableNumericColumns(ByVal lo As ListObject, ByVal headerList As Variant)
+    Dim i As Long
+    
+    For i = LBound(headerList) To UBound(headerList)
+        CoerceTableNumericColumn lo, CStr(headerList(i))
+    Next i
+End Sub
+
+Public Sub CoerceTableNumericColumn(ByVal lo As ListObject, ByVal headerName As String)
+    Dim lc As ListColumn
+    Dim c As Range
+    Dim s As String
+    
+    Set lc = GetListColumn(lo, headerName)
+    If lc Is Nothing Then Exit Sub
+    If lc.DataBodyRange Is Nothing Then Exit Sub
+    
+    For Each c In lc.DataBodyRange.Cells
+        s = Trim$(CStr(c.Value))
+        If Len(s) > 0 Then
+            s = Replace$(s, ",", ".")
+            If IsNumeric(s) Then c.Value = CDbl(s)
+        End If
+    Next c
+    
+    lc.DataBodyRange.NumberFormat = "General"
+End Sub
+
+Public Function TryParseDateValue(ByVal v As Variant, ByRef outDate As Date) As Boolean
+    Dim s As String
+    Dim parts() As String
+    
+    On Error GoTo Fail
+    
+    If IsDate(v) Then
+        outDate = CDate(v)
+        TryParseDateValue = True
+        Exit Function
+    End If
+    
+    If IsNumeric(v) Then
+        If CDbl(v) > 0 Then
+            outDate = DateSerial(1899, 12, 30) + CDbl(v)
+            TryParseDateValue = True
             Exit Function
         End If
-    Next i
+    End If
+    
+    s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+    
+    If InStr(1, s, "T", vbTextCompare) > 0 Then
+        s = Left$(s, InStr(1, s, "T", vbTextCompare) - 1)
+    End If
+    
+    s = Replace$(s, ".", "/")
+    s = Replace$(s, "-", "/")
+    
+    parts = Split(s, "/")
+    If UBound(parts) = 2 Then
+        If Len(parts(0)) = 4 Then
+            outDate = DateSerial(CLng(parts(0)), CLng(parts(1)), CLng(parts(2)))
+        Else
+            outDate = DateSerial(CLng(parts(2)), CLng(parts(1)), CLng(parts(0)))
+        End If
+        TryParseDateValue = True
+        Exit Function
+    End If
+    
+Fail:
+    TryParseDateValue = False
 End Function
 
-Private Function Trim2DArrayRows(ByVal arr As Variant, ByVal usedRows As Long, ByVal usedCols As Long) As Variant
-    Dim tmp() As Variant
-    Dim r As Long
+Public Function ToBoolean(ByVal v As Variant) As Boolean
+    Dim s As String
+    
+    Select Case VarType(v)
+        Case vbBoolean
+            ToBoolean = CBool(v)
+        Case vbByte, vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal
+            ToBoolean = (CDbl(v) <> 0)
+        Case Else
+            s = NormalizeText(CStr(v), True)
+            ToBoolean = (s = "VERDADERO" Or s = "TRUE" Or s = "SI" Or s = "YES" Or s = "1")
+    End Select
+End Function
+
+Public Function RowIsBlank(ByVal data As Variant, ByVal rowIndex As Long) As Boolean
     Dim c As Long
     
-    ReDim tmp(1 To usedRows, 1 To usedCols)
+    For c = 1 To UBound(data, 2)
+        If Len(Trim$(CStr(data(rowIndex, c)))) > 0 Then
+            RowIsBlank = False
+            Exit Function
+        End If
+    Next c
     
-    For r = 1 To usedRows
-        For c = 1 To usedCols
-            tmp(r, c) = arr(r, c)
-        Next c
-    Next r
-    
-    Trim2DArrayRows = tmp
+    RowIsBlank = True
 End Function
 
-Private Function WriteArrayToNewTable(ByVal arr As Variant, ByVal sheetName As String, ByVal tableName As String, ByVal tableStyleName As String) As ListObject
+Public Function LastUsedRow(ByVal ws As Worksheet) As Long
+    Dim lastCell As Range
+    
+    Set lastCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    If lastCell Is Nothing Then
+        LastUsedRow = 1
+    Else
+        LastUsedRow = lastCell.Row
+    End If
+End Function
+
+Public Function LastUsedCol(ByVal ws As Worksheet) As Long
+    Dim lastCell As Range
+    
+    Set lastCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    If lastCell Is Nothing Then
+        LastUsedCol = 1
+    Else
+        LastUsedCol = lastCell.Column
+    End If
+End Function
+
+Public Function CanonicalHeader(ByVal txt As String) As String
+    CanonicalHeader = NormalizeText(txt, True)
+End Function
+
+Public Function NormalizeText(ByVal txt As String, Optional ByVal compact As Boolean = False) As String
+    Dim s As String
+    Dim chars As Variant
+    Dim i As Long
+    
+    s = UCase$(CStr(txt))
+    
+    s = Replace$(s, Chr$(160), " ")
+    s = Replace$(s, vbCr, " ")
+    s = Replace$(s, vbLf, " ")
+    s = Replace$(s, vbTab, " ")
+    
+    s = Replace$(s, "Á", "A")
+    s = Replace$(s, "À", "A")
+    s = Replace$(s, "Ä", "A")
+    s = Replace$(s, "Â", "A")
+    
+    s = Replace$(s, "É", "E")
+    s = Replace$(s, "È", "E")
+    s = Replace$(s, "Ë", "E")
+    s = Replace$(s, "Ê", "E")
+    
+    s = Replace$(s, "Í", "I")
+    s = Replace$(s, "Ì", "I")
+    s = Replace$(s, "Ï", "I")
+    s = Replace$(s, "Î", "I")
+    
+    s = Replace$(s, "Ó", "O")
+    s = Replace$(s, "Ò", "O")
+    s = Replace$(s, "Ö", "O")
+    s = Replace$(s, "Ô", "O")
+    
+    s = Replace$(s, "Ú", "U")
+    s = Replace$(s, "Ù", "U")
+    s = Replace$(s, "Ü", "U")
+    s = Replace$(s, "Û", "U")
+    
+    s = Replace$(s, "Ñ", "N")
+    
+    chars = Array(".", ",", ";", ":", "-", "_", "/", "\", "(", ")", "[", "]", "{", "}", "'", """")
+    
+    For i = LBound(chars) To UBound(chars)
+        If compact Then
+            s = Replace$(s, CStr(chars(i)), vbNullString)
+        Else
+            s = Replace$(s, CStr(chars(i)), " ")
+        End If
+    Next i
+    
+    On Error Resume Next
+    s = Application.WorksheetFunction.Trim(s)
+    On Error GoTo 0
+    
+    If compact Then s = Replace$(s, " ", vbNullString)
+    
+    NormalizeText = s
+End Function
+
+Public Function WorksheetExists(ByVal sheetName As String) As Boolean
     Dim ws As Worksheet
-    Dim rg As Range
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+    
+    WorksheetExists = Not ws Is Nothing
+End Function
+
+Public Function TableExists(ByVal tableName As String) As Boolean
+    Dim ws As Worksheet
     Dim lo As ListObject
     
-    Application.DisplayAlerts = False
-    DeleteSheetIfExists sheetName
-    Application.DisplayAlerts = True
+    For Each ws In ThisWorkbook.Worksheets
+        For Each lo In ws.ListObjects
+            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
+                TableExists = True
+                Exit Function
+            End If
+        Next lo
+    Next ws
+End Function
+
+Public Function TableHasRows(ByVal lo As ListObject) As Boolean
+    If lo Is Nothing Then Exit Function
+    If lo.ListRows.Count = 0 Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
     
-    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-    ws.Name = sheetName
+    TableHasRows = True
+End Function
+
+Public Function TableHasRequiredColumns(ByVal lo As ListObject, ByVal requiredHeaders As Variant, Optional ByRef missingList As String = "") As Boolean
+    Dim i As Long
+    Dim headerName As String
+    Dim missing As String
     
-    Set rg = ws.Range("A1").Resize(UBound(arr, 1), UBound(arr, 2))
-    rg.Value = arr
+    If lo Is Nothing Then Exit Function
     
-    Set lo = ws.ListObjects.Add(SourceType:=xlSrcRange, Source:=rg, XlListObjectHasHeaders:=xlYes)
-    lo.Name = tableName
-    lo.TableStyle = tableStyleName
+    For i = LBound(requiredHeaders) To UBound(requiredHeaders)
+        headerName = CStr(requiredHeaders(i))
+        
+        If GetListColumn(lo, headerName) Is Nothing Then
+            If Len(missing) > 0 Then missing = missing & ", "
+            missing = missing & headerName
+        End If
+    Next i
     
-    Set WriteArrayToNewTable = lo
+    missingList = missing
+    TableHasRequiredColumns = (Len(missing) = 0)
 End Function

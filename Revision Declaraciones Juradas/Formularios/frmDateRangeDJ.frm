@@ -345,3 +345,4 @@ Private Sub HookTextBox(ByVal txt As MSForms.TextBox, ByVal isYearBox As Boolean
     
     mTextBoxHandlers.Add handler, txt.Name
 End Sub
+
